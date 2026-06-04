@@ -9,11 +9,19 @@ from database import (
 )
 from utils.auth import hash_password, verify_password
 from datetime import datetime
+from pydantic import BaseModel, EmailStr
+
 
 router = APIRouter()
 
 
-# 🔹 SIGNUP
+# 🆕 Naya model — Firebase signup ke liye (no password)
+class FirebaseUserSignup(BaseModel):
+    name: str
+    email: EmailStr
+
+
+# 🔹 SIGNUP (purana — abhi bhi rahega, koi farq nahi padta)
 @router.post("/signup")
 def signup(data: UserSignup):
     existing = users_col.find_one({"email": data.email})
@@ -34,7 +42,36 @@ def signup(data: UserSignup):
     return {"message": "Account created successfully", "email": data.email}
 
 
-# 🔹 LOGIN
+# 🆕 FIREBASE SIGNUP — naya endpoint (Firebase users ke liye)
+@router.post("/firebase-signup")
+def firebase_signup(data: FirebaseUserSignup):
+    existing = users_col.find_one({"email": data.email})
+    if existing:
+        # User pehle se hai to bhi success bhejo (no error)
+        return {
+            "message": "User already exists",
+            "email": data.email,
+        }
+
+    user_doc = {
+        "name": data.name,
+        "email": data.email,
+        "password": "FIREBASE_AUTH",  # placeholder, Firebase handles real password
+        "phone": "",
+        "language": "English",
+        "country": "Pakistan",
+        "created_at": datetime.utcnow(),
+        "auth_provider": "firebase",
+    }
+    users_col.insert_one(user_doc)
+
+    return {
+        "message": "Firebase profile created successfully",
+        "email": data.email,
+    }
+
+
+# 🔹 LOGIN (purana — abhi bhi rahega)
 @router.post("/login")
 def login(data: UserLogin):
     user = users_col.find_one({"email": data.email})
@@ -56,7 +93,7 @@ def login(data: UserLogin):
     }
 
 
-# 🔹 GET PROFILE (ye user-specific rehta hai — apna naam dikhe)
+# 🔹 GET PROFILE
 @router.get("/profile/{email}")
 def get_profile(email: str):
     user = users_col.find_one({"email": email})
@@ -95,10 +132,9 @@ def update_profile(email: str, data: UserProfileUpdate):
     return {"message": "Profile updated successfully"}
 
 
-# 🔹 STATS — ab SABKA total (email filter hata diya)
+# 🔹 STATS — sabka total (shared)
 @router.get("/stats/{email}")
 def get_stats(email: str):
-    # Sabka total count (kisi ek user ka nahi)
     translations_count = translations_col.count_documents({})
     voice_count = voice_translations_col.count_documents({})
     dictionary_count = dictionary_cache_col.count_documents({})
@@ -106,7 +142,6 @@ def get_stats(email: str):
 
     total_translations = translations_count + voice_count
 
-    # Saari unique languages (sabki)
     langs = set()
     for doc in translations_col.find({}, {"target_lang": 1}):
         if doc.get("target_lang"):
